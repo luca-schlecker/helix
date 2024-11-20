@@ -112,6 +112,7 @@ impl Application {
         let theme = config
             .theme
             .as_ref()
+            .map(helix_view::theme::Config::get_active_theme)
             .and_then(|theme| {
                 theme_loader
                     .load(theme)
@@ -438,6 +439,7 @@ impl Application {
         let theme = config
             .theme
             .as_ref()
+            .map(helix_view::theme::Config::get_active_theme)
             .and_then(|theme| {
                 self.theme_loader
                     .load(theme)
