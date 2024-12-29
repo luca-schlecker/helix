@@ -45,6 +45,9 @@ thiserror = "2.0"
 tempfile = "3.15.0"
 bitflags = "2.7"
 
+[patch.crates-io]
+crossterm = { git = "https://github.com/the-mikedavis/crossterm", branch = "md/theme-mode" }
+
 [workspace.package]
 version = "25.1.0"
 edition = "2021"
