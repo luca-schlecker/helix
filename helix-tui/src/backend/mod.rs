@@ -4,7 +4,7 @@ use std::io;
 
 use crate::{buffer::Cell, terminal::Config};
 
-use helix_view::graphics::{CursorKind, Rect};
+use helix_view::{graphics::{CursorKind, Rect}, theme};
 
 #[cfg(feature = "crossterm")]
 mod crossterm;
@@ -42,4 +42,5 @@ pub trait Backend {
     fn size(&self) -> Result<Rect, io::Error>;
     /// Flushes the terminal buffer
     fn flush(&mut self) -> Result<(), io::Error>;
+    fn get_theme_mode(&self) -> Option<theme::Mode>;
 }

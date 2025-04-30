@@ -52,6 +52,9 @@ futures-util = { version = "0.3", features = ["std", "async-await"], default-fea
 tokio-stream = "0.1.17"
 toml = "0.9"
 
+[patch.crates-io]
+crossterm = { git = "https://github.com/the-mikedavis/crossterm", branch = "md/theme-mode" }
+
 [workspace.package]
 version = "25.7.1"
 edition = "2021"
