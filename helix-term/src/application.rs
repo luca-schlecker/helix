@@ -109,7 +109,7 @@ impl Application {
         #[cfg(feature = "integration")]
         let backend = TestBackend::new(120, 150);
 
-        let terminal = Terminal::new(backend)?;
+        let mut terminal = Terminal::new(backend)?;
         let area = terminal.size().expect("couldn't get terminal size");
         let mut compositor = Compositor::new(area);
         let config = Arc::new(ArcSwap::from_pointee(config));
@@ -123,12 +123,15 @@ impl Application {
             })),
             handlers,
         );
-        Self::load_configured_theme(&mut editor, &config.load());
+        Self::load_configured_theme(&mut terminal, &mut editor, &config.load());
 
         let keys = Box::new(Map::new(Arc::clone(&config), |config: &Config| {
             &config.keys
         }));
-        let editor_view = Box::new(ui::EditorView::new(Keymaps::new(keys)));
+        let editor_view = Box::new(ui::EditorView::new(
+            Keymaps::new(keys),
+            Map::new(Arc::clone(&config), |config: &Config| &config.theme),
+        ));
         compositor.push(editor_view);
 
         if args.load_tutor {
@@ -412,6 +415,7 @@ impl Application {
                 document.replace_diagnostics(diagnostics, &[], None);
             }
 
+            self.refresh_language_config()?;
             self.terminal
                 .reconfigure(default_config.editor.clone().into())?;
             // Store new config
@@ -430,12 +434,14 @@ impl Application {
     }
 
     /// Load the theme set in configuration
-    fn load_configured_theme(editor: &mut Editor, config: &Config) {
+    fn load_configured_theme(terminal: &mut Terminal, editor: &mut Editor, config: &Config) {
         let true_color = config.editor.true_color || crate::true_color();
+        let theme_mode = terminal.backend().get_theme_mode();
         let theme = config
             .theme
             .as_ref()
-            .and_then(|theme| {
+            .and_then(|theme_config| {
+                let theme = theme_config.choose(theme_mode);
                 editor
                     .theme_loader
                     .load(theme)
