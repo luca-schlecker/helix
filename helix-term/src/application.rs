@@ -399,7 +399,7 @@ impl Application {
             // the sake of locals highlighting.
             let lang_loader = helix_core::config::user_lang_loader()?;
             self.editor.syn_loader.store(Arc::new(lang_loader));
-            Self::load_configured_theme(&mut self.editor, &default_config);
+            Self::load_configured_theme(&mut self.terminal, &mut self.editor, &default_config);
 
             // Re-parse any open documents with the new language config.
             let lang_loader = self.editor.syn_loader.load();
@@ -415,7 +415,7 @@ impl Application {
                 document.replace_diagnostics(diagnostics, &[], None);
             }
 
-            self.refresh_language_config()?;
+            self.refresh_config();
             self.terminal
                 .reconfigure(default_config.editor.clone().into())?;
             // Store new config
