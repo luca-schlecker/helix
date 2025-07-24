@@ -28,10 +28,10 @@ use helix_view::{
     document::{Mode, DEFAULT_LANGUAGE_NAME, SCRATCH_BUFFER_NAME},
     editor::{CompleteAction, CursorShapeConfig},
     graphics::{Color, CursorKind, Modifier, Rect, Style},
-    icons::ICONS,
+    icons::{Icons, ICONS},
     input::{KeyEvent, MouseButton, MouseEvent, MouseEventKind},
     keyboard::{KeyCode, KeyModifiers},
-    Document, Editor, Theme, View, theme,
+    theme, Document, Editor, Theme, View,
 };
 use std::{mem::take, num::NonZeroUsize, ops, path::PathBuf, rc::Rc};
 
@@ -606,7 +606,7 @@ impl EditorView {
 
             let lang = doc.language_name().unwrap_or(DEFAULT_LANGUAGE_NAME);
 
-            let icons = ICONS.load();
+            let icons: arc_swap::access::DynGuard<Icons> = ICONS.load();
 
             // Render the separator before the text if the current document is not first.
             if idx > 0 {
