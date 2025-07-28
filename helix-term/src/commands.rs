@@ -1,5 +1,6 @@
 pub(crate) mod dap;
 pub(crate) mod lsp;
+pub(crate) mod syntax;
 pub(crate) mod typed;
 
 pub use dap::*;
@@ -12,8 +13,9 @@ use helix_stdx::{
 use helix_vcs::{FileChange, Hunk};
 use helix_view::document::LineBlameError;
 pub use lsp::*;
+pub use syntax::*;
 use tui::{
-    text::{Span, Spans},
+    text::{Span, Spans, ToSpan},
     widgets::Cell,
 };
 pub use typed::*;
@@ -45,6 +47,7 @@ use helix_core::{
 use helix_view::{
     document::{FormatterError, Mode, SCRATCH_BUFFER_NAME},
     editor::Action,
+    icons::ICONS,
     info::Info,
     input::KeyEvent,
     keyboard::KeyCode,
@@ -406,9 +409,13 @@ impl MappableCommand {
         buffer_picker, "Open buffer picker",
         jumplist_picker, "Open jumplist picker",
         symbol_picker, "Open symbol picker",
+        syntax_symbol_picker, "Open symbol picker from syntax information",
+        lsp_or_syntax_symbol_picker, "Open symbol picker from LSP or syntax information",
         changed_file_picker, "Open changed file picker",
         select_references_to_symbol_under_cursor, "Select symbol references",
         workspace_symbol_picker, "Open workspace symbol picker",
+        syntax_workspace_symbol_picker, "Open workspace symbol picker from syntax information",
+        lsp_or_syntax_workspace_symbol_picker, "Open workspace symbol picker from LSP or syntax information",
         diagnostics_picker, "Open diagnostic picker",
         workspace_diagnostics_picker, "Open workspace diagnostic picker",
         last_picker, "Open last picker",
@@ -467,6 +474,8 @@ impl MappableCommand {
         smart_tab, "Insert tab if all cursors have all whitespace to their left; otherwise, run a separate command.",
         insert_tab, "Insert tab char",
         insert_newline, "Insert newline char",
+        insert_char_interactive, "Insert an interactively-chosen char",
+        append_char_interactive, "Append an interactively-chosen char",
         delete_char_backward, "Delete previous char",
         delete_char_forward, "Delete next char",
         delete_word_backward, "Delete previous word",
@@ -566,6 +575,8 @@ impl MappableCommand {
         goto_prev_comment, "Goto previous comment",
         goto_next_test, "Goto next test",
         goto_prev_test, "Goto previous test",
+        goto_next_xml_element, "Goto next (X)HTML element",
+        goto_prev_xml_element, "Goto previous (X)HTML element",
         goto_next_entry, "Goto next pairing",
         goto_prev_entry, "Goto previous pairing",
         goto_next_paragraph, "Goto next paragraph",
@@ -2490,12 +2501,22 @@ fn global_search(cx: &mut Context) {
                 .expect("global search paths are normalized (can't end in `..`)")
                 .to_string_lossy();
 
-            Cell::from(Spans::from(vec![
+            let mut spans = Vec::with_capacity(5);
+
+            let icons = ICONS.load();
+
+            if let Some(icon) = icons.fs().from_path(&path) {
+                spans.push(icon.to_span_with(|icon| format!("{icon} ")));
+            }
+
+            spans.extend_from_slice(&[
                 Span::styled(directories, config.directory_style),
                 Span::raw(filename),
                 Span::styled(":", config.colon_style),
                 Span::styled((item.line_num + 1).to_string(), config.number_style),
-            ]))
+            ]);
+
+            Cell::from(Spans::from(spans))
         }),
         PickerColumn::hidden("contents"),
     ];
@@ -3184,11 +3205,23 @@ fn buffer_picker(cx: &mut Context) {
                 .path
                 .as_deref()
                 .map(helix_stdx::path::get_relative_path);
-            path.as_deref()
+
+            let name = path
+                .as_deref()
                 .and_then(Path::to_str)
-                .unwrap_or(SCRATCH_BUFFER_NAME)
-                .to_string()
-                .into()
+                .unwrap_or(SCRATCH_BUFFER_NAME);
+
+            let icons = ICONS.load();
+
+            let mut spans = Vec::with_capacity(2);
+
+            if let Some(icon) = icons.fs().from_optional_path(path.as_deref()) {
+                spans.push(icon.to_span_with(|icon| format!("{icon} ")));
+            }
+
+            spans.push(name.to_string().into());
+
+            Spans::from(spans).into()
         }),
     ];
     let picker = Picker::new(columns, 2, items, (), |cx, meta, action| {
@@ -3247,11 +3280,22 @@ fn jumplist_picker(cx: &mut Context) {
                 .path
                 .as_deref()
                 .map(helix_stdx::path::get_relative_path);
-            path.as_deref()
+
+            let name = path
+                .as_deref()
                 .and_then(Path::to_str)
-                .unwrap_or(SCRATCH_BUFFER_NAME)
-                .to_string()
-                .into()
+                .unwrap_or(SCRATCH_BUFFER_NAME);
+            let icons = ICONS.load();
+
+            let mut spans = Vec::with_capacity(2);
+
+            if let Some(icon) = icons.fs().from_optional_path(path.as_deref()) {
+                spans.push(icon.to_span_with(|icon| format!("{icon} ")));
+            }
+
+            spans.push(name.to_string().into());
+
+            Spans::from(spans).into()
         }),
         ui::PickerColumn::new("flags", |item: &JumpMeta, _| {
             let mut flags = Vec::new();
@@ -3321,12 +3365,43 @@ fn changed_file_picker(cx: &mut Context) {
 
     let columns = [
         PickerColumn::new("change", |change: &FileChange, data: &FileChangeData| {
+            let icons = ICONS.load();
             match change {
-                FileChange::Untracked { .. } => Span::styled("+ untracked", data.style_untracked),
-                FileChange::Modified { .. } => Span::styled("~ modified", data.style_modified),
-                FileChange::Conflict { .. } => Span::styled("x conflict", data.style_conflict),
-                FileChange::Deleted { .. } => Span::styled("- deleted", data.style_deleted),
-                FileChange::Renamed { .. } => Span::styled("> renamed", data.style_renamed),
+                FileChange::Untracked { .. } => Span::styled(
+                    match icons.vcs().added() {
+                        Some(icon) => Cow::from(format!("{icon} untracked")),
+                        None => Cow::from("untracked"),
+                    },
+                    data.style_untracked,
+                ),
+                FileChange::Modified { .. } => Span::styled(
+                    match icons.vcs().modified() {
+                        Some(icon) => Cow::from(format!("{icon} modified")),
+                        None => Cow::from("modified"),
+                    },
+                    data.style_modified,
+                ),
+                FileChange::Conflict { .. } => Span::styled(
+                    match icons.vcs().conflict() {
+                        Some(icon) => Cow::from(format!("{icon} conflict")),
+                        None => Cow::from("conflict"),
+                    },
+                    data.style_conflict,
+                ),
+                FileChange::Deleted { .. } => Span::styled(
+                    match icons.vcs().removed() {
+                        Some(icon) => Cow::from(format!("{icon} deleted")),
+                        None => Cow::from("deleted"),
+                    },
+                    data.style_deleted,
+                ),
+                FileChange::Renamed { .. } => Span::styled(
+                    match icons.vcs().renamed() {
+                        Some(icon) => Cow::from(format!("{icon} renamed")),
+                        None => Cow::from("renamed"),
+                    },
+                    data.style_renamed,
+                ),
             }
             .into()
         }),
@@ -3777,11 +3852,13 @@ fn open(cx: &mut Context, open: Open, comment_continuation: CommentContinuation)
             .map(|token| token.len() + 1) // `+ 1` for the extra space added
             .unwrap_or_default();
         for i in 0..count {
-            // pos                    -> beginning of reference line,
-            // + (i * (1+indent_len + comment_len)) -> beginning of i'th line from pos (possibly including comment token)
+            // pos                     -> beginning of reference line,
+            // + (i * (line_ending_len + indent_len + comment_len)) -> beginning of i'th line from pos (possibly including comment token)
             // + indent_len + comment_len ->        -> indent for i'th line
             ranges.push(Range::point(
-                pos + (i * (1 + indent_len + comment_len)) + indent_len + comment_len,
+                pos + (i * (doc.line_ending.len_chars() + indent_len + comment_len))
+                    + indent_len
+                    + comment_len,
             ));
         }
 
@@ -4145,7 +4222,7 @@ fn hunk_range(hunk: Hunk, text: RopeSlice) -> Range {
 }
 
 pub mod insert {
-    use crate::events::PostInsertChar;
+    use crate::{events::PostInsertChar, key};
 
     use super::*;
     pub type Hook = fn(&Rope, &Selection, char) -> Option<Transaction>;
@@ -4224,17 +4301,64 @@ pub mod insert {
     }
 
     pub fn insert_tab(cx: &mut Context) {
+        insert_tab_impl(cx, 1)
+    }
+
+    fn insert_tab_impl(cx: &mut Context, count: usize) {
         let (view, doc) = current!(cx.editor);
         // TODO: round out to nearest indentation level (for example a line with 3 spaces should
         // indent by one to reach 4 spaces).
 
-        let indent = Tendril::from(doc.indent_style.as_str());
+        let indent = Tendril::from(doc.indent_style.as_str().repeat(count));
         let transaction = Transaction::insert(
             doc.text(),
             &doc.selection(view.id).clone().cursors(doc.text().slice(..)),
             indent,
         );
         doc.apply(&transaction, view.id);
+    }
+
+    pub fn append_char_interactive(cx: &mut Context) {
+        // Save the current mode, so we can restore it later.
+        let mode = cx.editor.mode;
+        append_mode(cx);
+        insert_selection_interactive(cx, mode);
+    }
+
+    pub fn insert_char_interactive(cx: &mut Context) {
+        let mode = cx.editor.mode;
+        insert_mode(cx);
+        insert_selection_interactive(cx, mode);
+    }
+
+    fn insert_selection_interactive(cx: &mut Context, old_mode: Mode) {
+        let count = cx.count();
+
+        // need to wait for next key
+        cx.on_next_key(move |cx, event| {
+            match event {
+                KeyEvent {
+                    code: KeyCode::Char(ch),
+                    ..
+                } => {
+                    for _ in 0..count {
+                        insert::insert_char(cx, ch)
+                    }
+                }
+                key!(Enter) => {
+                    if count != 1 {
+                        cx.editor
+                            .set_error("inserting multiple newlines not yet supported");
+                        return;
+                    }
+                    insert_newline(cx)
+                }
+                key!(Tab) => insert_tab_impl(cx, count),
+                _ => (),
+            };
+            // Restore the old mode.
+            cx.editor.mode = old_mode;
+        });
     }
 
     pub fn insert_newline(cx: &mut Context) {
@@ -5931,6 +6055,14 @@ fn goto_prev_test(cx: &mut Context) {
     goto_ts_object_impl(cx, "test", Direction::Backward)
 }
 
+fn goto_next_xml_element(cx: &mut Context) {
+    goto_ts_object_impl(cx, "xml-element", Direction::Forward)
+}
+
+fn goto_prev_xml_element(cx: &mut Context) {
+    goto_ts_object_impl(cx, "xml-element", Direction::Backward)
+}
+
 fn goto_next_entry(cx: &mut Context) {
     goto_ts_object_impl(cx, "entry", Direction::Forward)
 }
@@ -5998,6 +6130,7 @@ fn select_textobject(cx: &mut Context, objtype: textobject::TextObject) {
                         'c' => textobject_treesitter("comment", range),
                         'T' => textobject_treesitter("test", range),
                         'e' => textobject_treesitter("entry", range),
+                        'x' => textobject_treesitter("xml-element", range),
                         'p' => textobject::textobject_paragraph(text, range, objtype, count),
                         'm' => textobject::textobject_pair_surround_closest(
                             doc.syntax(),
@@ -6042,6 +6175,7 @@ fn select_textobject(cx: &mut Context, objtype: textobject::TextObject) {
         ("e", "Data structure entry (tree-sitter)"),
         ("m", "Closest surrounding pair (tree-sitter)"),
         ("g", "Change"),
+        ("x", "X(HTML) element (tree-sitter)"),
         (" ", "... or any character acting as a pair"),
     ];
 
@@ -6779,6 +6913,10 @@ fn jump_to_word(cx: &mut Context, behaviour: Movement) {
     // Calculate the jump candidates: ranges for any visible words with two or
     // more characters.
     let alphabet = &cx.editor.config().jump_label_alphabet;
+    if alphabet.is_empty() {
+        return;
+    }
+
     let jump_label_limit = alphabet.len() * alphabet.len();
     let mut words = Vec::with_capacity(jump_label_limit);
     let (view, doc) = current_ref!(cx.editor);
@@ -6867,4 +7005,35 @@ fn jump_to_word(cx: &mut Context, behaviour: Movement) {
         }
     }
     jump_to_label(cx, words, behaviour)
+}
+
+fn lsp_or_syntax_symbol_picker(cx: &mut Context) {
+    let doc = doc!(cx.editor);
+
+    if doc
+        .language_servers_with_feature(LanguageServerFeature::DocumentSymbols)
+        .next()
+        .is_some()
+    {
+        lsp::symbol_picker(cx);
+    } else if doc.syntax().is_some() {
+        syntax_symbol_picker(cx);
+    } else {
+        cx.editor
+            .set_error("No language server supporting document symbols or syntax info available");
+    }
+}
+
+fn lsp_or_syntax_workspace_symbol_picker(cx: &mut Context) {
+    let doc = doc!(cx.editor);
+
+    if doc
+        .language_servers_with_feature(LanguageServerFeature::WorkspaceSymbols)
+        .next()
+        .is_some()
+    {
+        lsp::workspace_symbol_picker(cx);
+    } else {
+        syntax_workspace_symbol_picker(cx);
+    }
 }

@@ -10,7 +10,7 @@
 //! These types form a hierarchy: [`Spans`] is a collection of [`Span`] and each line of [`Text`]
 //! is a [`Spans`].
 //!
-//! Keep it mind that a lot of widgets will use those types to advertise what kind of string is
+//! Keep in mind that a lot of widgets will use those types to advertise what kind of string is
 //! supported for their properties. Moreover, `tui` provides convenient `From` implementations so
 //! that you can start by using simple `String` or `&str` and then promote them to the previous
 //! primitives when you need additional styling capabilities.
@@ -49,6 +49,7 @@
 use helix_core::line_ending::str_is_line_ending;
 use helix_core::unicode::width::UnicodeWidthStr;
 use helix_view::graphics::Style;
+use helix_view::icons::Icon;
 use std::borrow::Cow;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -205,6 +206,20 @@ impl<'a> From<&'a str> for Span<'a> {
 impl<'a> From<Cow<'a, str>> for Span<'a> {
     fn from(s: Cow<'a, str>) -> Span<'a> {
         Span::raw(s)
+    }
+}
+
+pub trait ToSpan<'a> {
+    fn to_span_with(&self, content: impl Fn(&Self) -> String) -> Span<'a>;
+}
+
+impl<'a> ToSpan<'a> for Icon {
+    fn to_span_with(&self, content: impl Fn(&Self) -> String) -> Span<'a> {
+        if let Some(style) = self.color().map(|color| Style::default().fg(color)) {
+            Span::styled(content(self), style)
+        } else {
+            Span::raw(content(self))
+        }
     }
 }
 

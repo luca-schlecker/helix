@@ -110,7 +110,7 @@ impl Application {
         #[cfg(feature = "integration")]
         let backend = TestBackend::new(120, 150);
 
-        let terminal = Terminal::new(backend)?;
+        let mut terminal = Terminal::new(backend)?;
         let area = terminal.size().expect("couldn't get terminal size");
         let mut compositor = Compositor::new(area);
         let config = Arc::new(ArcSwap::from_pointee(config));
@@ -124,12 +124,15 @@ impl Application {
             })),
             handlers,
         );
-        Self::load_configured_theme(&mut editor, &config.load());
+        Self::load_configured_theme(&mut terminal, &mut editor, &config.load());
 
         let keys = Box::new(Map::new(Arc::clone(&config), |config: &Config| {
             &config.keys
         }));
-        let editor_view = Box::new(ui::EditorView::new(Keymaps::new(keys)));
+        let editor_view = Box::new(ui::EditorView::new(
+            Keymaps::new(keys),
+            Map::new(Arc::clone(&config), |config: &Config| &config.theme),
+        ));
         compositor.push(editor_view);
 
         if args.load_tutor {
@@ -357,6 +360,8 @@ impl Application {
     }
 
     pub fn handle_config_events(&mut self, config_event: ConfigEvent) {
+        let old_editor_config = self.editor.config();
+
         match config_event {
             ConfigEvent::Refresh => self.refresh_config(),
 
@@ -379,7 +384,7 @@ impl Application {
 
         // Update all the relevant members in the editor after updating
         // the configuration.
-        self.editor.refresh_config();
+        self.editor.refresh_config(&old_editor_config);
 
         // reset view position in case softwrap was enabled/disabled
         let scrolloff = self.editor.config().scrolloff;
@@ -399,11 +404,13 @@ impl Application {
             // the sake of locals highlighting.
             let lang_loader = helix_core::config::user_lang_loader()?;
             self.editor.syn_loader.store(Arc::new(lang_loader));
-            Self::load_configured_theme(&mut self.editor, &default_config);
+            Self::load_configured_theme(&mut self.terminal, &mut self.editor, &default_config);
 
             // Re-parse any open documents with the new language config.
             let lang_loader = self.editor.syn_loader.load();
             for document in self.editor.documents.values_mut() {
+                // Re-detect .editorconfig
+                document.detect_editor_config();
                 document.detect_language(&lang_loader);
                 let diagnostics = Editor::doc_diagnostics(
                     &self.editor.language_servers,
@@ -413,6 +420,7 @@ impl Application {
                 document.replace_diagnostics(diagnostics, &[], None);
             }
 
+            self.refresh_config();
             self.terminal
                 .reconfigure(default_config.editor.clone().into())?;
             // Store new config
@@ -431,12 +439,14 @@ impl Application {
     }
 
     /// Load the theme set in configuration
-    fn load_configured_theme(editor: &mut Editor, config: &Config) {
+    fn load_configured_theme(terminal: &mut Terminal, editor: &mut Editor, config: &Config) {
         let true_color = config.editor.true_color || crate::true_color();
+        let theme_mode = terminal.backend().get_theme_mode();
         let theme = config
             .theme
             .as_ref()
-            .and_then(|theme| {
+            .and_then(|theme_config| {
+                let theme = theme_config.choose(theme_mode);
                 editor
                     .theme_loader
                     .load(theme)
@@ -574,16 +584,24 @@ impl Application {
         doc.set_last_saved_revision(doc_save_event.revision, doc_save_event.save_time);
 
         let lines = doc_save_event.text.len_lines();
-        let bytes = doc_save_event.text.len_bytes();
+        let mut sz = doc_save_event.text.len_bytes() as f32;
+
+        const SUFFIX: [&str; 4] = ["B", "KiB", "MiB", "GiB"];
+        let mut i = 0;
+        while i < SUFFIX.len() - 1 && sz >= 1024.0 {
+            sz /= 1024.0;
+            i += 1;
+        }
 
         self.editor
             .set_doc_path(doc_save_event.doc_id, &doc_save_event.path);
         // TODO: fix being overwritten by lsp
         self.editor.set_status(format!(
-            "'{}' written, {}L {}B",
+            "'{}' written, {}L {:.1}{}",
             get_relative_path(&doc_save_event.path).to_string_lossy(),
             lines,
-            bytes
+            sz,
+            SUFFIX[i],
         ));
     }
 
@@ -605,8 +623,8 @@ impl Application {
                 // limit render calls for fast language server messages
                 helix_event::request_redraw();
             }
-            EditorEvent::DebuggerEvent(payload) => {
-                let needs_render = self.editor.handle_debugger_message(payload).await;
+            EditorEvent::DebuggerEvent((id, payload)) => {
+                let needs_render = self.editor.handle_debugger_message(id, payload).await;
                 if needs_render {
                     self.render().await;
                 }

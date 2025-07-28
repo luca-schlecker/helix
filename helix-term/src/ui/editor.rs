@@ -12,6 +12,7 @@ use crate::{
         Completion, ProgressSpinners,
     },
 };
+use arc_swap::access::DynAccess;
 
 use helix_core::{
     diagnostic::NumberOrString,
@@ -24,12 +25,13 @@ use helix_core::{
 };
 use helix_view::{
     annotations::diagnostics::DiagnosticFilter,
-    document::{Mode, SCRATCH_BUFFER_NAME},
+    document::{Mode, DEFAULT_LANGUAGE_NAME, SCRATCH_BUFFER_NAME},
     editor::{CompleteAction, CursorShapeConfig, InlineBlameConfig, InlineBlameShow},
     graphics::{Color, CursorKind, Modifier, Rect, Style},
+    icons::{Icons, ICONS},
     input::{KeyEvent, MouseButton, MouseEvent, MouseEventKind},
     keyboard::{KeyCode, KeyModifiers},
-    Document, Editor, Theme, View,
+    theme, Document, Editor, Theme, View,
 };
 use std::{mem::take, num::NonZeroUsize, ops, path::PathBuf, rc::Rc};
 
@@ -39,6 +41,7 @@ use super::text_decorations::blame::InlineBlame;
 
 pub struct EditorView {
     pub keymaps: Keymaps,
+    theme_config: Box<dyn DynAccess<Option<theme::Config>>>,
     on_next_key: Option<(OnKeyCallback, OnKeyCallbackKind)>,
     pseudo_pending: Vec<KeyEvent>,
     pub(crate) last_insert: (commands::MappableCommand, Vec<InsertEvent>),
@@ -60,9 +63,13 @@ pub enum InsertEvent {
 }
 
 impl EditorView {
-    pub fn new(keymaps: Keymaps) -> Self {
+    pub fn new(
+        keymaps: Keymaps,
+        theme_config: impl DynAccess<Option<theme::Config>> + 'static,
+    ) -> Self {
         Self {
             keymaps,
+            theme_config: Box::new(theme_config),
             on_next_key: None,
             pseudo_pending: Vec::new(),
             last_insert: (commands::MappableCommand::normal_mode, Vec::new()),
@@ -128,6 +135,18 @@ impl EditorView {
             inner.height,
             &text_annotations,
         ));
+
+        if doc
+            .language_config()
+            .and_then(|config| config.rainbow_brackets)
+            .unwrap_or(config.rainbow_brackets)
+        {
+            if let Some(overlay) =
+                Self::doc_rainbow_highlights(doc, view_offset.anchor, inner.height, theme, &loader)
+            {
+                overlays.push(overlay);
+            }
+        }
 
         Self::doc_diagnostics_highlights_into(doc, theme, &mut overlays);
 
@@ -361,6 +380,27 @@ impl EditorView {
         range = text.byte_to_char(range.start)..text.byte_to_char(range.end);
 
         text_annotations.collect_overlay_highlights(range)
+    }
+
+    pub fn doc_rainbow_highlights(
+        doc: &Document,
+        anchor: usize,
+        height: u16,
+        theme: &Theme,
+        loader: &syntax::Loader,
+    ) -> Option<OverlayHighlights> {
+        let syntax = doc.syntax()?;
+        let text = doc.text().slice(..);
+        let row = text.char_to_line(anchor.min(text.len_chars()));
+        let visible_range = Self::viewport_byte_range(text, row, height);
+        let start = syntax::child_for_byte_range(
+            &syntax.tree().root_node(),
+            visible_range.start as u32..visible_range.end as u32,
+        )
+        .map_or(visible_range.start as u32, |node| node.start_byte());
+        let range = start..visible_range.end as u32;
+
+        Some(syntax.rainbow_highlights(text, theme.rainbow_length(), loader, range))
     }
 
     /// Get highlight spans for document diagnostics
@@ -641,7 +681,7 @@ impl EditorView {
         let mut x = viewport.x;
         let current_doc = view!(editor).doc;
 
-        for doc in editor.documents() {
+        for (idx, doc) in editor.documents().enumerate() {
             let fname = doc
                 .path()
                 .unwrap_or(&scratch)
@@ -656,7 +696,45 @@ impl EditorView {
                 bufferline_inactive
             };
 
-            let text = format!(" {}{} ", fname, if doc.is_modified() { "[+]" } else { "" });
+            let lang = doc.language_name().unwrap_or(DEFAULT_LANGUAGE_NAME);
+
+            let icons: arc_swap::access::DynGuard<Icons> = ICONS.load();
+
+            // Render the separator before the text if the current document is not first.
+            if idx > 0 {
+                let used_width = viewport.x.saturating_sub(x);
+                let rem_width = surface.area.width.saturating_sub(used_width);
+                x = surface
+                    .set_stringn(
+                        x,
+                        viewport.y,
+                        icons.ui().bufferline().separator(),
+                        rem_width as usize,
+                        bufferline_inactive,
+                    )
+                    .0;
+            }
+
+            if let Some(icon) = icons
+                .fs()
+                .from_optional_path_or_lang(doc.path().map(|path| path.as_path()), lang)
+            {
+                let used_width = viewport.x.saturating_sub(x);
+                let rem_width = surface.area.width.saturating_sub(used_width);
+
+                let style = icon.color().map_or(style, |color| style.fg(color));
+
+                x = surface
+                    .set_stringn(x, viewport.y, format!(" {icon}"), rem_width as usize, style)
+                    .0;
+
+                if x >= surface.area.right() {
+                    break;
+                }
+            }
+
+            let text = format!(" {} {}", fname, if doc.is_modified() { "[+] " } else { "" });
+
             let used_width = viewport.x.saturating_sub(x);
             let rem_width = surface.area.width.saturating_sub(used_width);
 
@@ -1542,6 +1620,18 @@ impl Component for EditorView {
                     }
                 }
                 self.terminal_focused = false;
+                EventResult::Consumed(None)
+            }
+            Event::ThemeModeChanged(theme_mode) => {
+                if let Some(theme_config) = self.theme_config.load().as_ref() {
+                    let theme_name = theme_config.choose(Some(*theme_mode));
+                    match context.editor.theme_loader.load(theme_name) {
+                        Ok(theme) => context.editor.set_theme(theme),
+                        Err(err) => {
+                            log::warn!("failed to load theme `{}` - {}", theme_name, err);
+                        }
+                    }
+                }
                 EventResult::Consumed(None)
             }
         }
