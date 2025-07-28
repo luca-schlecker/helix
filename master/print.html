@@ -1015,6 +1015,7 @@ useful when you're simply looking over text and not actively editing it.</p>
 <tr><td><code>R</code></td><td>Replace selections by clipboard contents</td><td><code>replace_selections_with_clipboard</code></td></tr>
 <tr><td><code>/</code></td><td>Global search in workspace folder</td><td><code>global_search</code></td></tr>
 <tr><td><code>?</code></td><td>Open command palette</td><td><code>command_palette</code></td></tr>
+<tr><td><code>B</code></td><td>Show blame for the current line</td><td><code>blame_line</code></td></tr>
 </tbody></table>
 </div>
 <blockquote>
@@ -1654,6 +1655,7 @@ space.B = ":echo %sh{git blame -L %{cursor_line},+1 %{buffer_name}}"
 <tr><td><code>extend_to_word</code></td><td>Extend to a two-character label</td><td>select: <code>gw</code></td></tr>
 <tr><td><code>goto_next_tabstop</code></td><td>Goto next snippet placeholder</td><td></td></tr>
 <tr><td><code>goto_prev_tabstop</code></td><td>Goto next snippet placeholder</td><td></td></tr>
+<tr><td><code>blame_line</code></td><td>Show blame for the current line</td><td>normal: <code>&lt;space&gt;B</code>, select: <code>&lt;space&gt;B</code></td></tr>
 <tr><td><code>rotate_selections_first</code></td><td>Make the first selection your primary one</td><td></td></tr>
 <tr><td><code>rotate_selections_last</code></td><td>Make the last selection your primary one</td><td></td></tr>
 </tbody></table>
@@ -2024,6 +2026,7 @@ Its settings will be merged with the configuration directory <code>config.toml</
 <li><a href="editor.html#editorclipboard-provider-section"><code>[editor.clipboard-provider]</code> Section</a></li>
 <li><a href="editor.html#editorstatusline-section"><code>[editor.statusline]</code> Section</a></li>
 <li><a href="editor.html#editorlsp-section"><code>[editor.lsp]</code> Section</a></li>
+<li><a href="editor.html#editorinlineblame-section"><code>[editor.inline-blame]</code> Section</a></li>
 <li><a href="editor.html#editorcursor-shape-section"><code>[editor.cursor-shape]</code> Section</a></li>
 <li><a href="editor.html#editorfile-picker-section"><code>[editor.file-picker]</code> Section</a></li>
 <li><a href="editor.html#editorauto-pairs-section"><code>[editor.auto-pairs]</code> Section</a></li>
@@ -2178,6 +2181,34 @@ workspace-diagnostics = ["warning", "error"]
 <div class="footnote-definition" id="2"><sup class="footnote-definition-label">2</sup>
 <p>You may also have to activate them in the language server config for them to appear, not just in Helix. Inlay hints in Helix are still being improved on and may be a little bit laggy/janky under some circumstances. Please report any bugs you see so we can fix them!</p>
 </div>
+<h3 id="editorinline-blame-section"><a class="header" href="#editorinline-blame-section"><code>[editor.inline-blame]</code> Section</a></h3>
+<p>Inline blame is virtual text that appears at the end of a line, displaying information about the most recent commit that affected this line.</p>
+<div class="table-wrapper"><table><thead><tr><th>Key</th><th>Description</th><th>Default</th></tr></thead><tbody>
+<tr><td><code>show</code></td><td>When to show inline blame</td><td><code>"never"</code></td></tr>
+<tr><td><code>auto-fetch</code></td><td>Automatically fetch blame information in the background</td><td><code>false</code></td></tr>
+<tr><td><code>format</code></td><td>Inline blame message format</td><td><code>"{author}, {time-ago} • {title} • {commit}"</code></td></tr>
+</tbody></table>
+</div>
+<p><code>show</code> can be one of the following:</p>
+<ul>
+<li><code>"all-lines"</code>: Inline blame is on every line.</li>
+<li><code>"cursor-line"</code>: Inline blame is only on the line of the primary cursor.</li>
+<li><code>"hidden"</code>: Inline blame is hidden.</li>
+</ul>
+<p>With <code>auto-fetch</code> set to <code>false</code>, blame for the current file is fetched only when explicitly requested, such as when using <code>space + B</code> to display the blame for the line of the cursor. There may be a little delay when loading the blame.</p>
+<p>When <code>auto-fetch</code> is set to <code>true</code>, blame for the file is fetched in the background; this will have no effect on performance, but will use a little bit extra resources in the background. Directly requesting the blame with <code>space + B</code> will be instant. Inline blame will show as soon as the blame is available when loading new files.</p>
+<p>When opening new files, even with <code>show</code> set to <code>"all-lines"</code> or <code>"cursor-line"</code>, the inline blame won't show. It needs to be fetched first in order to become available, which can be triggered manually with <code>space + B</code>.</p>
+<h4 id="format"><a class="header" href="#format"><code>format</code></a></h4>
+<p>Change the <code>format</code> string to customize the blame message displayed. Variables are text placeholders wrapped in curly braces: <code>{variable}</code>. The following variables are available:</p>
+<ul>
+<li><code>author</code>: The author of the commit</li>
+<li><code>date</code>: When the commit was made</li>
+<li><code>time-ago</code>: How long ago the commit was made</li>
+<li><code>title</code>: The title of the commit</li>
+<li><code>body</code>: The body of the commit</li>
+<li><code>commit</code>: The short hex SHA1 hash of the commit</li>
+<li><code>email</code>: The email of the author of the commit</li>
+</ul>
 <h3 id="editorcursor-shape-section"><a class="header" href="#editorcursor-shape-section"><code>[editor.cursor-shape]</code> Section</a></h3>
 <p>Defines the shape of cursor in each mode.
 Valid values for these options are <code>block</code>, <code>bar</code>, <code>underline</code>, or <code>hidden</code>.</p>
@@ -2812,6 +2843,7 @@ The key is a list of styles.</p>
 <tr><td><code>ui.virtual.inlay-hint.type</code></td><td>Style for inlay hints of kind <code>type</code> (language servers are not required to set a kind)</td></tr>
 <tr><td><code>ui.virtual.wrap</code></td><td>Soft-wrap indicator (see the <a href="./configuration.html#editor-section"><code>editor.soft-wrap</code> config</a>)</td></tr>
 <tr><td><code>ui.virtual.jump-label</code></td><td>Style for virtual jump labels</td></tr>
+<tr><td><code>ui.virtual.inline-blame</code></td><td>Inline blame indicator (see the <a href="./configuration.html#editor-section"><code>editor.inline-blame</code> config</a>)</td></tr>
 <tr><td><code>ui.menu</code></td><td>Code and command completion menus</td></tr>
 <tr><td><code>ui.menu.selected</code></td><td>Selected autocomplete item</td></tr>
 <tr><td><code>ui.menu.scroll</code></td><td><code>fg</code> sets thumb color, <code>bg</code> sets track color of scrollbar</td></tr>
