@@ -162,6 +162,14 @@
                     <main>
                         <h2 id="themes"><a class="header" href="#themes">Themes</a></h2>
 <p>To use a theme add <code>theme = "&lt;name&gt;"</code> to the top of your <a href="./configuration.html"><code>config.toml</code></a> file, or select it during runtime using <code>:theme &lt;name&gt;</code>.</p>
+<p>Separate themes can be configured for light and dark modes. On terminals supporting <a href="https://github.com/contour-terminal/contour/blob/master/docs/vt-extensions/color-palette-update-notifications.md">mode 2031 dark/light detection</a>, the theme mode is detected from the terminal.</p>
+<pre><code class="language-toml">[theme]
+dark = "catppuccin_frappe"
+light = "catppuccin_latte"
+## Optional. Used if the terminal doesn't declare a preference.
+## Defaults to the theme set for `dark` if not specified.
+# fallback = "catppuccin_frappe"
+</code></pre>
 <h2 id="creating-a-theme"><a class="header" href="#creating-a-theme">Creating a theme</a></h2>
 <p>Create a file with the name of your theme as the file name (i.e <code>mytheme.toml</code>) and place it in your <code>themes</code> directory (i.e <code>~/.config/helix/themes</code> or <code>%AppData%\helix\themes</code> on Windows). The directory might have to be created beforehand.</p>
 <blockquote>
@@ -558,7 +566,6 @@ The key is a list of styles.</p>
 <tr><td><code>ui.virtual.inlay-hint.type</code></td><td>Style for inlay hints of kind <code>type</code> (language servers are not required to set a kind)</td></tr>
 <tr><td><code>ui.virtual.wrap</code></td><td>Soft-wrap indicator (see the <a href="./configuration.html#editor-section"><code>editor.soft-wrap</code> config</a>)</td></tr>
 <tr><td><code>ui.virtual.jump-label</code></td><td>Style for virtual jump labels</td></tr>
-<tr><td><code>ui.virtual.inline-blame</code></td><td>Inline blame indicator (see the <a href="./configuration.html#editor-section"><code>editor.inline-blame</code> config</a>)</td></tr>
 <tr><td><code>ui.menu</code></td><td>Code and command completion menus</td></tr>
 <tr><td><code>ui.menu.selected</code></td><td>Selected autocomplete item</td></tr>
 <tr><td><code>ui.menu.scroll</code></td><td><code>fg</code> sets thumb color, <code>bg</code> sets track color of scrollbar</td></tr>
