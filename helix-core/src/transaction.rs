@@ -869,6 +869,12 @@ impl Transaction {
         })
     }
 
+    pub fn replace(doc: &Rope, selection: &Selection, text: Tendril) -> Self {
+        Self::change_by_selection(doc, selection, |range| {
+            (range.from(), range.to(), Some(text.clone()))
+        })
+    }
+
     pub fn changes_iter(&self) -> ChangeIterator<'_> {
         self.changes.changes_iter()
     }
