@@ -183,7 +183,7 @@ where
     let style = if visible && config.color_modes {
         match context.editor.mode() {
             Mode::Insert => context.editor.theme.get("ui.statusline.insert"),
-            Mode::Overtype => context.editor.theme.get("ui.statusline.overtype"),
+            Mode::Overtype => context.editor.theme.get("ui.statusline.insert"),
             Mode::Select => context.editor.theme.get("ui.statusline.select"),
             Mode::Normal => context.editor.theme.get("ui.statusline.normal"),
         }
