@@ -238,6 +238,8 @@ pub struct Document {
 
     /// When fetching blame on-demand, if this field is `true` we request the blame for this document again
     pub is_blame_potentially_out_of_date: bool,
+    /// Whether to render the welcome screen when opening the document
+    pub is_welcome: bool,
     // NOTE: this field should eventually go away - we should use the Editor's syn_loader instead
     // of storing a copy on every doc. Then we can remove the surrounding `Arc` and use the
     // `ArcSwap` directly.
@@ -866,6 +868,7 @@ impl Document {
             file_blame: None,
             is_blame_potentially_out_of_date: false,
             document_highlight_controllers: HashMap::new(),
+            is_welcome: false,
             syn_loader,
             previous_diagnostic_ids: HashMap::new(),
             pull_diagnostic_controller: TaskController::new(),
@@ -891,6 +894,11 @@ impl Document {
         let line_ending: LineEnding = config.load().default_line_ending.into();
         let text = Rope::from(line_ending.as_str());
         Self::from(text, None, config, syn_loader)
+    }
+
+    pub fn with_welcome(mut self) -> Self {
+        self.is_welcome = true;
+        self
     }
 
     // TODO: async fn?
