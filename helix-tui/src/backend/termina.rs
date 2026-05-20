@@ -293,17 +293,18 @@ impl TerminaBackend {
     }
 
     fn reset_background_color(&mut self) -> io::Result<()> {
-        write!(
-            self.terminal,
-            "{}",
-            match self.original_background_color {
-                Some(color) => Osc::ChangeDynamicColors(
-                    osc::DynamicColorNumber::TextBackgroundColor,
-                    vec![color.into()]
-                ),
-                None => Osc::ResetDynamicColor(osc::DynamicColorNumber::TextBackgroundColor),
-            }
-        )
+        // write!(
+        //     self.terminal,
+        //     "{}",
+        //     match self.original_background_color {
+        //         Some(color) => Osc::ChangeDynamicColors(
+        //             osc::DynamicColorNumber::TextBackgroundColor,
+        //             vec![color.into()]
+        //         ),
+        //         None => Osc::ResetDynamicColor(osc::DynamicColorNumber::TextBackgroundColor),
+        //     }
+        // )
+        Ok(())
     }
 
     fn enable_extensions(&mut self) -> io::Result<()> {
@@ -618,25 +619,26 @@ impl Backend for TerminaBackend {
     }
 
     fn set_background_color(&mut self, color: Option<Color>) -> io::Result<()> {
-        if !self.capabilities.dynamic_background_color {
-            return Ok(());
-        }
-        self.background_color = match color {
-            Some(Color::Rgb(r, g, b)) => Some(RgbColor::new(r, g, b)),
-            _ => None,
-        };
-        if let Some(color) = self.background_color {
-            write!(
-                self.terminal,
-                "{}",
-                Osc::ChangeDynamicColors(
-                    osc::DynamicColorNumber::TextBackgroundColor,
-                    vec![color.into()]
-                )
-            )
-        } else {
-            self.reset_background_color()
-        }
+        // if !self.capabilities.dynamic_background_color {
+        //     return Ok(());
+        // }
+        // self.background_color = match color {
+        //     Some(Color::Rgb(r, g, b)) => Some(RgbColor::new(r, g, b)),
+        //     _ => None,
+        // };
+        // if let Some(color) = self.background_color {
+        //     write!(
+        //         self.terminal,
+        //         "{}",
+        //         Osc::ChangeDynamicColors(
+        //             osc::DynamicColorNumber::TextBackgroundColor,
+        //             vec![color.into()]
+        //         )
+        //     )
+        // } else {
+        //     self.reset_background_color()
+        // }
+        Ok(())
     }
 }
 
